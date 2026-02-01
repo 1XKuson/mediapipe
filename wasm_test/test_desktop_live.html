@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaPipe Face Mesh Desktop Live - Real Video Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 1400px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .stats {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-label {
+            font-size: 0.8em;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .toggle-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .toggle-label {
+            font-weight: 500;
+            color: #667eea;
+        }
+        .status {
+            text-align: center;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        .status.loading { background: #fff3cd; color: #856404; }
+        .status.ready { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎭 MediaPipe Face Mesh Desktop Live</h1>
+        <div class="subtitle">Real-time 468-point Face Landmark Detection</div>
+        
+        <div class="status" id="status">Loading WASM module...</div>
+        
+        <div class="grid">
+            <div class="video-container">
+                <video id="video" playsinline autoplay muted></video>
+                <canvas id="overlay"></canvas>
+            </div>
+            <div class="video-container">
+                <canvas id="output"></canvas>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Face Detected</div>
+                <div class="stat-value" id="faceStatus">❌</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Landmarks</div>
+                <div class="stat-value" id="landmarkCount">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Confidence</div>
+                <div class="stat-value" id="confidence">0%</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">FPS</div>
+                <div class="stat-value" id="fps">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Frames Processed</div>
+                <div class="stat-value" id="frameCount">0</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Avg Depth (Z)</div>
+                <div class="stat-value" id="avgDepth">0.00</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="toggle-group">
+                <span class="toggle-label">Show:</span>
+                <button id="toggleMesh" onclick="toggleMesh()">✅ Mesh</button>
+                <button id="togglePoints" onclick="togglePoints()">✅ Points</button>
+                <button id="toggleAttention" onclick="toggleAttention()">✅ Attention</button>
+            </div>
+            <button onclick="startCamera()">📷 Start Camera</button>
+            <button onclick="stopCamera()">⏹️ Stop</button>
+        </div>
+    </div>
+
+    <script src="face_mesh_desktop_live_wasm.js"></script>
+    <script>
+        let processor = null;
+        let videoStream = null;
+        let animationId = null;
+        let showMesh = true;
+        let showPoints = true;
+        let useAttention = true;
+        
+        // FPS calculation
+        let lastFrameTime = 0;
+        let fps = 0;
+        
+        // Canvas elements
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const output = document.getElementById('output');
+        const overlayCtx = overlay.getContext('2d');
+        const outputCtx = output.getContext('2d');
+        
+        // Face mesh connection indices (simplified - key connections only)
+        const FACE_CONNECTIONS = [
+            // Silhouette
+            [10, 338], [338, 297], [297, 332], [332, 284],
+            [284, 251], [251, 389], [389, 356], [356, 454],
+            [454, 323], [323, 361], [361, 288], [288, 397],
+            [397, 365], [365, 379], [379, 378], [378, 400],
+            [400, 377], [377, 152], [152, 148], [148, 176],
+            [176, 149], [149, 150], [150, 136], [136, 172],
+            [172, 58], [58, 132], [132, 93], [93, 234],
+            [234, 127], [127, 162], [162, 21], [21, 54],
+            [54, 103], [103, 67], [67, 109], [109, 10],
+            
+            // Left eye
+            [33, 7], [7, 163], [163, 144], [144, 145],
+            [145, 153], [153, 154], [154, 155], [155, 133],
+            [133, 33],
+            
+            // Right eye
+            [362, 382], [382, 381], [381, 380], [380, 374],
+            [374, 373], [373, 390], [390, 249], [249, 263],
+            [263, 362],
+            
+            // Lips outer
+            [61, 146], [146, 91], [91, 181], [181, 84],
+            [84, 17], [17, 314], [314, 405], [405, 321],
+            [321, 375], [375, 291], [291, 61],
+            
+            // Nose
+            [168, 6], [6, 197], [197, 195], [195, 5]
+        ];
+        
+        // Initialize WASM module
+        createFaceMeshDesktopLiveModule().then(Module => {
+            processor = new Module.FaceMeshDesktopLive();
+            
+            if (processor.initialize(1, useAttention)) {
+                console.log('✅ Initialized:', processor.getVersion());
+                setStatus('ready', 'Ready! Click "Start Camera" to begin');
+            } else {
+                setStatus('error', 'Failed to initialize processor');
+            }
+        }).catch(err => {
+            console.error('Failed to load WASM:', err);
+            setStatus('error', 'Failed to load WASM module');
+        });
+        
+        async function startCamera() {
+            try {
+                if (!processor) {
+                    alert('Processor not initialized yet');
+                    return;
+                }
+                
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480, facingMode: 'user' }
+                });
+                
+                video.srcObject = videoStream;
+                video.play();
+                
+                video.onloadedmetadata = () => {
+                    overlay.width = video.videoWidth;
+                    overlay.height = video.videoHeight;
+                    output.width = video.videoWidth;
+                    output.height = video.videoHeight;
+                    
+                    setStatus('ready', 'Processing video... Show your face!');
+                    processFrame();
+                };
+            } catch (err) {
+                console.error('Camera error:', err);
+                setStatus('error', 'Camera access denied');
+            }
+        }
+        
+        function stopCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+            outputCtx.clearRect(0, 0, output.width, output.height);
+            setStatus('ready', 'Stopped. Click "Start Camera" to resume');
+        }
+        
+        function processFrame() {
+            if (!video.videoWidth || !video.videoHeight) {
+                animationId = requestAnimationFrame(processFrame);
+                return;
+            }
+            
+            // Calculate FPS
+            const now = performance.now();
+            if (lastFrameTime) {
+                fps = Math.round(1000 / (now - lastFrameTime));
+            }
+            lastFrameTime = now;
+            
+            // Get video frame
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(video, 0, 0);
+            
+            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            
+            // Process with WASM
+            const result = processor.processFrame(
+                tempCanvas.width,
+                tempCanvas.height,
+                imageData.data
+            );
+            
+            // Update stats
+            document.getElementById('faceStatus').textContent = result.detected ? '✅' : '❌';
+            document.getElementById('landmarkCount').textContent = result.landmarkCount;
+            document.getElementById('confidence').textContent = Math.round(result.confidence * 100) + '%';
+            document.getElementById('fps').textContent = fps;
+            document.getElementById('frameCount').textContent = processor.getFrameCount();
+            document.getElementById('avgDepth').textContent = processor.getAverageLandmarkZ().toFixed(3);
+            
+            // Draw landmarks
+            if (result.detected) {
+                const landmarks = processor.getLandmarks();
+                drawLandmarks(overlayCtx, landmarks, tempCanvas.width, tempCanvas.height);
+                drawLandmarksOnBlack(outputCtx, landmarks, output.width, output.height);
+            } else {
+                overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+                outputCtx.fillStyle = '#000';
+                outputCtx.fillRect(0, 0, output.width, output.height);
+            }
+            
+            animationId = requestAnimationFrame(processFrame);
+        }
+        
+        function drawLandmarks(ctx, landmarks, width, height) {
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw connections (mesh)
+            if (showMesh) {
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+                ctx.lineWidth = 1;
+                FACE_CONNECTIONS.forEach(([i, j]) => {
+                    if (i < landmarks.size() && j < landmarks.size()) {
+                        const lm1 = landmarks.get(i);
+                        const lm2 = landmarks.get(j);
+                        ctx.beginPath();
+                        ctx.moveTo(lm1.x * width, lm1.y * height);
+                        ctx.lineTo(lm2.x * width, lm2.y * height);
+                        ctx.stroke();
+                    }
+                });
+            }
+            
+            // Draw points
+            if (showPoints) {
+                for (let i = 0; i < landmarks.size(); i++) {
+                    const lm = landmarks.get(i);
+                    const z = lm.z;
+                    
+                    // Color based on depth
+                    const hue = Math.max(0, Math.min(120, 120 + z * 1000));
+                    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                    
+                    ctx.beginPath();
+                    ctx.arc(lm.x * width, lm.y * height, 2, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+        }
+        
+        function drawLandmarksOnBlack(ctx, landmarks, width, height) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+            
+            // Draw mesh
+            if (showMesh) {
+                ctx.strokeStyle = 'rgba(102, 126, 234, 0.5)';
+                ctx.lineWidth = 1;
+                FACE_CONNECTIONS.forEach(([i, j]) => {
+                    if (i < landmarks.size() && j < landmarks.size()) {
+                        const lm1 = landmarks.get(i);
+                        const lm2 = landmarks.get(j);
+                        ctx.beginPath();
+                        ctx.moveTo(lm1.x * width, lm1.y * height);
+                        ctx.lineTo(lm2.x * width, lm2.y * height);
+                        ctx.stroke();
+                    }
+                });
+            }
+            
+            // Draw points
+            if (showPoints) {
+                for (let i = 0; i < landmarks.size(); i++) {
+                    const lm = landmarks.get(i);
+                    const z = lm.z;
+                    
+                    const hue = Math.max(0, Math.min(240, 180 - z * 1000));
+                    ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+                    
+                    ctx.beginPath();
+                    ctx.arc(lm.x * width, lm.y * height, 2.5, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            }
+        }
+        
+        function toggleMesh() {
+            showMesh = !showMesh;
+            document.getElementById('toggleMesh').textContent = (showMesh ? '✅' : '❌') + ' Mesh';
+        }
+        
+        function togglePoints() {
+            showPoints = !showPoints;
+            document.getElementById('togglePoints').textContent = (showPoints ? '✅' : '❌') + ' Points';
+        }
+        
+        function toggleAttention() {
+            useAttention = !useAttention;
+            if (processor) {
+                processor.setWithAttention(useAttention);
+            }
+            document.getElementById('toggleAttention').textContent = (useAttention ? '✅' : '❌') + ' Attention';
+        }
+        
+        function setStatus(type, message) {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            status.textContent = message;
+        }
+    </script>
+</body>
+</html>

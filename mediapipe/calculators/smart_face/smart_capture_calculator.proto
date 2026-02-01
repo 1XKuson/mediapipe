@@ -1,0 +1,23 @@
+syntax = "proto2";
+
+package mediapipe;
+
+import "mediapipe/framework/calculator.proto";
+
+message SmartCaptureCalculatorOptions {
+  extend CalculatorOptions {
+    optional SmartCaptureCalculatorOptions ext = 234567891;
+  }
+  
+  // จำนวนภาพที่ต้องการแคป
+  optional int32 max_captures = 1 [default = 5];
+
+  // เงื่อนไข: องศาการหันหน้าซ้าย/ขวา (Yaw) ที่ยอมรับได้ (เช่น ไม่เกิน 15 องศา)
+  optional float max_yaw_degrees = 2 [default = 15.0];
+
+  // เงื่อนไข: องศาการก้ม/เงยหน้า (Pitch) ที่ยอมรับได้
+  optional float max_pitch_degrees = 3 [default = 15.0];
+  
+  // ขยายขอบภาพตอนแคป (Padding)
+  optional float padding = 4 [default = 0.2];
+}

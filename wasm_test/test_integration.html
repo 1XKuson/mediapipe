@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Face Landmark Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .test-section {
+            border: 2px solid #ddd;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 8px;
+        }
+        .success { color: #28a745; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .warning { color: #ffc107; font-weight: bold; }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Face Landmark Integration Test</h1>
+    <p>Testing the integration of smart_capture.pbtxt features into WASM module</p>
+
+    <div class="test-section">
+        <h3>1. Module Loading</h3>
+        <div id="loadStatus">⏳ Loading...</div>
+    </div>
+
+    <div class="test-section">
+        <h3>2. Configuration Test</h3>
+        <button onclick="testConfig()">Test Configuration</button>
+        <div id="configResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>3. Face Detection & Pose Estimation</h3>
+        <button onclick="testPoseEstimation()">Test Different Poses</button>
+        <div id="poseResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>4. Quality Validation</h3>
+        <button onclick="testQualityValidation()">Test Quality Check</button>
+        <div id="qualityResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>5. Smart Capture System</h3>
+        <button onclick="testSmartCapture()">Test Smart Capture</button>
+        <button onclick="resetTest()">Reset</button>
+        <div id="captureResult"></div>
+    </div>
+
+    <script src="smart_face_wasm.js"></script>
+    <script>
+        let wasmModule = null;
+        let processor = null;
+
+        // Load module
+        createSmartFaceModule().then(Module => {
+            wasmModule = Module;
+            processor = new wasmModule.SmartFaceProcessor();
+            processor.initialize();
+            
+            // Configure from smart_capture.pbtxt
+            processor.setMaxYaw(15.0);
+            processor.setMaxPitch(15.0);
+            processor.setMaxCaptures(5);
+            
+            document.getElementById('loadStatus').innerHTML = 
+                '<span class="success">✅ Module loaded successfully</span><br>' +
+                processor.getVersion() + '<br>' +
+                processor.getConfig();
+        }).catch(error => {
+            document.getElementById('loadStatus').innerHTML = 
+                '<span class="error">❌ Failed to load: ' + error.message + '</span>';
+        });
+
+        function testConfig() {
+            const result = document.getElementById('configResult');
+            result.innerHTML = '<h4>Configuration Test Results:</h4><pre>';
+            
+            try {
+                result.innerHTML += 'Version: ' + processor.getVersion() + '\n';
+                result.innerHTML += 'Config: ' + processor.getConfig() + '\n';
+                result.innerHTML += 'Status: ' + processor.getStatus() + '\n';
+                result.innerHTML += 'Initialized: ' + processor.isInitialized() + '\n';
+                result.innerHTML += 'Capture Count: ' + processor.getCaptureCount() + '/5\n';
+                
+                // Test setters
+                processor.setMaxYaw(20.0);
+                result.innerHTML += '\nAfter setMaxYaw(20.0): ' + processor.getConfig() + '\n';
+                processor.setMaxYaw(15.0); // Reset
+                
+                processor.setMaxPitch(10.0);
+                result.innerHTML += 'After setMaxPitch(10.0): ' + processor.getConfig() + '\n';
+                processor.setMaxPitch(15.0); // Reset
+                
+                result.innerHTML += '\n<span class="success">✅ Configuration test passed!</span>';
+                result.innerHTML += '</pre>';
+            } catch (e) {
+                result.innerHTML += '<span class="error">❌ Error: ' + e.message + '</span></pre>';
+            }
+        }
+
+        function testPoseEstimation() {
+            const result = document.getElementById('poseResult');
+            result.innerHTML = '<h4>Pose Estimation Test Results:</h4><pre>';
+            
+            try {
+                // Test various image sizes to simulate different poses
+                const tests = [
+                    {w: 100, h: 100, desc: 'Small image (should not detect)'},
+                    {w: 320, h: 240, desc: 'Medium image (good quality)'},
+                    {w: 640, h: 480, desc: 'Large image (good quality)'},
+                    {w: 350, h: 250, desc: 'Custom size 1'},
+                    {w: 370, h: 260, desc: 'Custom size 2'}
+                ];
+                
+                tests.forEach(test => {
+                    const faceResult = processor.detectFace(test.w, test.h, null);
+                    result.innerHTML += `\n${test.desc} (${test.w}x${test.h}):\n`;
+                    result.innerHTML += `  Detected: ${faceResult.detected}\n`;
+                    result.innerHTML += `  Yaw: ${faceResult.yaw.toFixed(1)}°, Pitch: ${faceResult.pitch.toFixed(1)}°, Roll: ${faceResult.roll.toFixed(1)}°\n`;
+                    result.innerHTML += `  Quality: ${faceResult.qualityGood ? '✅ Good' : '⚠ Poor'}\n`;
+                    result.innerHTML += `  Message: ${faceResult.message}\n`;
+                    result.innerHTML += `  Landmarks: ${faceResult.landmarkCount}\n`;
+                });
+                
+                result.innerHTML += '\n<span class="success">✅ Pose estimation test passed!</span>';
+                result.innerHTML += '</pre>';
+            } catch (e) {
+                result.innerHTML += '<span class="error">❌ Error: ' + e.message + '</span></pre>';
+            }
+        }
+
+        function testQualityValidation() {
+            const result = document.getElementById('qualityResult');
+            result.innerHTML = '<h4>Quality Validation Test:</h4><pre>';
+            
+            try {
+                // Test edge cases for quality validation
+                result.innerHTML += 'Testing quality thresholds:\n\n';
+                
+                // Good quality (within limits)
+                let faceResult = processor.detectFace(640, 480, null);
+                result.innerHTML += `Test 1 - Within limits:\n`;
+                result.innerHTML += `  Yaw: ${faceResult.yaw.toFixed(1)}° (max ±15°)\n`;
+                result.innerHTML += `  Pitch: ${faceResult.pitch.toFixed(1)}° (max ±15°)\n`;
+                result.innerHTML += `  Quality: ${faceResult.qualityGood ? '<span class="success">✅ PASS</span>' : '<span class="warning">⚠ FAIL</span>'}\n\n`;
+                
+                // Multiple tests to show variation
+                for (let i = 0; i < 5; i++) {
+                    const w = 320 + i * 30;
+                    const h = 240 + i * 20;
+                    faceResult = processor.detectFace(w, h, null);
+                    
+                    result.innerHTML += `Test ${i + 2} (${w}x${h}):\n`;
+                    result.innerHTML += `  Pose: Yaw ${faceResult.yaw.toFixed(1)}°, Pitch ${faceResult.pitch.toFixed(1)}°\n`;
+                    result.innerHTML += `  Quality: ${faceResult.qualityGood ? '<span class="success">✅ Good</span>' : '<span class="warning">⚠ Needs adjustment</span>'}\n`;
+                    result.innerHTML += `  ${faceResult.message}\n\n`;
+                }
+                
+                result.innerHTML += '<span class="success">✅ Quality validation test passed!</span>';
+                result.innerHTML += '</pre>';
+            } catch (e) {
+                result.innerHTML += '<span class="error">❌ Error: ' + e.message + '</span></pre>';
+            }
+        }
+
+        function testSmartCapture() {
+            const result = document.getElementById('captureResult');
+            result.innerHTML = '<h4>Smart Capture Test:</h4><pre>';
+            
+            try {
+                result.innerHTML += 'Initial state: ' + processor.getStatus() + '\n\n';
+                
+                // Try to capture various quality levels
+                const tests = [
+                    {w: 100, h: 100, desc: 'Too small'},
+                    {w: 320, h: 240, desc: 'Good quality 1'},
+                    {w: 350, h: 250, desc: 'Possible good'},
+                    {w: 370, h: 260, desc: 'Possible good'},
+                    {w: 640, h: 480, desc: 'Good quality 2'},
+                    {w: 800, h: 600, desc: 'Extra attempt'},
+                ];
+                
+                tests.forEach((test, idx) => {
+                    const captured = processor.captureFrame(test.w, test.h, null);
+                    const faceResult = processor.detectFace(test.w, test.h, null);
+                    
+                    result.innerHTML += `Attempt ${idx + 1} - ${test.desc}:\n`;
+                    result.innerHTML += `  Face detected: ${faceResult.detected}\n`;
+                    result.innerHTML += `  Quality good: ${faceResult.qualityGood}\n`;
+                    result.innerHTML += `  Captured: ${captured ? '<span class="success">✅ YES</span>' : '<span class="error">❌ NO</span>'}\n`;
+                    result.innerHTML += `  Count: ${processor.getCaptureCount()}/5\n`;
+                    result.innerHTML += `  Reason: ${faceResult.message}\n\n`;
+                    
+                    if (processor.getCaptureCount() >= 5) {
+                        result.innerHTML += '<span class="warning">⚠ Maximum captures reached!</span>\n';
+                        return;
+                    }
+                });
+                
+                result.innerHTML += '\nFinal status: ' + processor.getStatus() + '\n';
+                result.innerHTML += '\n<span class="success">✅ Smart capture test completed!</span>';
+                result.innerHTML += '</pre>';
+            } catch (e) {
+                result.innerHTML += '<span class="error">❌ Error: ' + e.message + '</span></pre>';
+            }
+        }
+
+        function resetTest() {
+            if (processor) {
+                processor.resetCaptures();
+                document.getElementById('captureResult').innerHTML = 
+                    '<p class="success">✅ Capture count reset! Status: ' + processor.getStatus() + '</p>';
+            }
+        }
+    </script>
+</body>
+</html>

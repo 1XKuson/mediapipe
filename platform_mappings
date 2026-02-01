@@ -54,6 +54,10 @@ flags:
   --apple_platform_type=ios
     @mediapipe//mediapipe:ios_arm64e_platform
 
+  --cpu=wasm
+  --crosstool_top=@emsdk//emscripten_toolchain:everything
+    @mediapipe//mediapipe:emscripten_platform
+
   --cpu=x64_windows
     @mediapipe//mediapipe:windows_platform
 

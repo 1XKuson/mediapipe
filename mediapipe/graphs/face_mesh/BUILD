@@ -68,3 +68,41 @@ mediapipe_binary_graph(
     output_name = "face_mesh_mobile_gpu.binarypb",
     deps = [":mobile_calculators"],
 )
+
+# WASM build target
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "face_mesh_wasm",
+    srcs = ["face_mesh_wasm.cc"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sUSE_PTHREADS=0",
+        "--bind",
+        "-sTOTAL_STACK=128MB",
+        "-sINITIAL_MEMORY=128MB",
+        "-sEXPORT_NAME='createFaceMeshModule'",
+        "-sMODULARIZE=1",
+        "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']",
+    ],
+    data = [
+        "//mediapipe/modules/face_landmark:face_landmark_with_attention.tflite",
+    ],
+    deps = [],
+)
+
+cc_binary(
+    name = "face_mesh_desktop_live_wasm",
+    srcs = ["face_mesh_desktop_live_wasm.cc"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sUSE_PTHREADS=0",
+        "--bind",
+        "-sTOTAL_STACK=128MB",
+        "-sINITIAL_MEMORY=128MB",
+        "-sEXPORT_NAME='createFaceMeshDesktopLiveModule'",
+        "-sMODULARIZE=1",
+        "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']",
+    ],
+    deps = [],
+)

@@ -613,11 +613,6 @@ http_archive(
     urls = ["https://github.com/opencv/opencv/archive/3.4.11.tar.gz"],
 )
 
-new_local_repository(
-    name = "linux_opencv",
-    build_file = "@//third_party:opencv_linux.BUILD",
-    path = "/usr",
-)
 
 new_local_repository(
     name = "linux_ffmpeg",
@@ -644,6 +639,14 @@ new_local_repository(
     name = "windows_opencv",
     build_file = "@//third_party:opencv_windows.BUILD",
     path = "C:\\opencv\\build",
+)
+
+http_archive(
+    name = "emscripten_opencv",
+    build_file = "@//third_party:opencv_emscripten.BUILD",
+    strip_prefix = "opencv-4.10.0",
+    sha256 = "b2171af5be6b26f7a06b1229948bbb2bdaa74fcf5cd097e0af6378fce50a6eb9",
+    urls = ["https://github.com/opencv/opencv/archive/refs/tags/4.10.0.tar.gz"],
 )
 
 # protobuf requires @system_python in WORKSPACE
@@ -940,3 +943,21 @@ http_archive(
     strip_prefix = "gradle-8.4",
     urls = ["https://services.gradle.org/distributions/gradle-8.4-bin.zip"],
 )
+
+# Emscripten SDK (emsdk)
+http_archive(
+    name = "emsdk",
+    sha256 = "86a6af30e43d7b501772e5d2993457c924b73f1d1c0a3484a8c6c48452af549f",
+    strip_prefix = "emsdk-3.1.55/bazel",
+    url = "https://github.com/emscripten-core/emsdk/archive/refs/tags/3.1.55.tar.gz",
+)
+
+load("@emsdk//:deps.bzl", emsdk_deps = "deps")
+emsdk_deps()
+
+load("@emsdk//:emscripten_deps.bzl", emsdk_emscripten_deps = "emscripten_deps")
+emsdk_emscripten_deps(emscripten_version = "3.1.55")
+
+load("@emsdk//:toolchains.bzl", "register_emscripten_toolchains")
+register_emscripten_toolchains()
+

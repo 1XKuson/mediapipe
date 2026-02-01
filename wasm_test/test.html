@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Face WASM Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        #status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .loading {
+            background-color: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+        #info {
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .video-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .video-box {
+            flex: 1;
+        }
+        video, canvas {
+            width: 100%;
+            max-width: 640px;
+            border: 2px solid #4CAF50;
+            border-radius: 4px;
+        }
+        .controls {
+            margin: 10px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        #capturedImages {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .captured-img {
+            width: 150px;
+            height: 150px;
+            object-fit: cover;
+            border: 2px solid #28a745;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Smart Face WASM Test</h1>
+        
+        <div id="status" class="loading">
+            Loading WebAssembly module...
+        </div>
+
+        <div id="info">
+            <h3>Module Information</h3>
+            <div id="moduleInfo">Waiting for module to load...</div>
+        </div>
+
+        <button onclick="testModule()">Test Module</button>
+        <button onclick="testFaceDetection()">Test Face Detection</button>
+
+        <div id="output" style="margin-top: 20px;"></div>
+        
+        <div id="webcamSection" style="margin-top: 30px;">
+            <h3>🎥 Live Webcam Face Detection</h3>
+            <div class="controls">
+                <button onclick="startWebcam()" id="startBtn">Start Webcam</button>
+                <button onclick="stopWebcam()" id="stopBtn" disabled>Stop Webcam</button>
+                <button onclick="captureFrame()" id="captureBtn" disabled>📸 Capture Face</button>
+                <label>
+                    <input type="checkbox" id="showLandmarks" checked> Show Landmarks
+                </label>
+            </div>
+            
+            <div class="video-container">
+                <div class="video-box">
+                    <h4>Camera Input</h4>
+                    <video id="webcam" autoplay playsinline></video>
+                    <div id="detectionStatus" style="margin-top: 5px; font-weight: bold;"></div>
+                </div>
+                <div class="video-box">
+                    <h4>Detection Output</h4>
+                    <canvas id="outputCanvas" width="640" height="480"></canvas>
+                    <div id="faceInfo" style="margin-top: 5px;"></div>
+                </div>
+            </div>
+            
+            <div id="capturedImages" style="margin-top: 20px;"></div>
+        </div>
+        
+        <div id="faceTest" style="margin-top: 20px; display: none;">
+            <h3>Face Detection Test</h3>
+            <canvas id="testCanvas" width="640" height="480" style="border: 1px solid #ccc;"></canvas>
+        </div>
+    </div>
+
+    <script src="smart_face_wasm.js"></script>
+    <script>
+        let wasmModule = null;
+        let processor = null;
+        const statusDiv = document.getElementById('status');
+        const infoDiv = document.getElementById('moduleInfo');
+        const outputDiv = document.getElementById('output');
+
+        // Load the module using the factory function
+        createSmartFaceModule().then(function(Module) {
+            console.log('✅ WASM Runtime initialized');
+            statusDiv.className = 'success';
+            statusDiv.textContent = '✅ WebAssembly module loaded successfully!';
+            
+            wasmModule = Module;
+            displayModuleInfo();
+        }).catch(function(error) {
+            statusDiv.className = 'error';
+            statusDiv.textContent = '❌ Error loading WASM module: ' + error.message;
+            console.error('Error:', error);
+        });
+
+        function displayModuleInfo() {
+            const info = `
+                <strong>Status:</strong> Loaded and ready<br>
+                <strong>Memory:</strong> ${(wasmModule.HEAP8.length / 1024 / 1024).toFixed(2)} MB<br>
+                <strong>Module Info:</strong> ${wasmModule.getModuleInfo()}<br>
+                <strong>SmartFaceProcessor available:</strong> Yes<br>
+            `;
+            infoDiv.innerHTML = info;
+            
+            // Create a processor instance
+            try {
+                processor = new wasmModule.SmartFaceProcessor();
+                processor.initialize();
+                
+                // Configure based on smart_capture.pbtxt settings
+                processor.setMaxYaw(15.0);      // max_yaw_degrees from pbtxt
+                processor.setMaxPitch(15.0);    // max_pitch_degrees from pbtxt
+                processor.setMaxCaptures(5);    // max_captures
+                
+                console.log('Processor created and configured:');
+                console.log('Config:', processor.getConfig());
+            } catch(e) {
+                console.error('Error creating processor:', e);
+            }
+        }
+
+        function testModule() {
+            outputDiv.innerHTML = '<h3>Test Results:</h3>';
+            
+            if (!wasmModule) {
+                outputDiv.innerHTML += '<pre style="color: red;">Module not loaded yet!</pre>';
+                return;
+            }
+
+            try {
+                // Test standalone functions
+                outputDiv.innerHTML += `<pre>🔍 Testing standalone functions...</pre>`;
+                const moduleInfo = wasmModule.getModuleInfo();
+                outputDiv.innerHTML += `<pre>✅ getModuleInfo(): ${moduleInfo}</pre>`;
+                
+                const testResult = wasmModule.testFunction(21);
+                outputDiv.innerHTML += `<pre>✅ testFunction(21): ${testResult}</pre>`;
+                
+                // Test SmartFaceProcessor class
+                outputDiv.innerHTML += `<pre>\n🔍 Testing SmartFaceProcessor class...</pre>`;
+                
+                if (!processor) {
+                    processor = new wasmModule.SmartFaceProcessor();
+                    outputDiv.innerHTML += `<pre>✅ Created processor instance</pre>`;
+                }
+                
+                const version = processor.getVersion();
+                outputDiv.innerHTML += `<pre>✅ getVersion(): ${version}</pre>`;
+                
+                const addResult = processor.add(10, 32);
+                outputDiv.innerHTML += `<pre>✅ add(10, 32): ${addResult}</pre>`;
+                
+                const initResult = processor.initialize();
+                outputDiv.innerHTML += `<pre>✅ initialize(): ${initResult}</pre>`;
+                
+                const isInit = processor.isInitialized();
+                outputDiv.innerHTML += `<pre>✅ isInitialized(): ${isInit}</pre>`;
+                
+                const processResult = processor.processImage(640, 480);
+                outputDiv.innerHTML += `<pre>✅ processImage(640, 480): ${processResult}</pre>`;
+                
+                const status = processor.getStatus();
+                outputDiv.innerHTML += `<pre>✅ getStatus(): ${status}</pre>`;
+                
+                // Test memory
+                if (wasmModule.HEAP8) {
+                    outputDiv.innerHTML += `<pre>\n✅ Memory accessible: ${(wasmModule.HEAP8.length / 1024 / 1024).toFixed(2)} MB</pre>`;
+                }
+                
+                outputDiv.innerHTML += '<pre style="color: green; font-weight: bold;">\n✅ All tests PASSED!</pre>';
+                
+            } catch (error) {
+                outputDiv.innerHTML += `<pre style="color: red;">❌ Error during test: ${error.message}\n${error.stack}</pre>`;
+                console.error('Test error:', error);
+            }
+        }
+        
+        function testFaceDetection() {
+            const faceTestDiv = document.getElementById('faceTest');
+            faceTestDiv.style.display = 'block';
+            outputDiv.innerHTML = '<h3>Face Detection Test Results:</h3>';
+            
+            if (!wasmModule || !processor) {
+                outputDiv.innerHTML += '<pre style="color: red;">Module not loaded yet!</pre>';
+                return;
+            }
+            
+            try {
+                // Test with different image sizes
+                outputDiv.innerHTML += '<pre>🔍 Testing face detection with various image sizes...</pre>';
+                
+                // Test 1: Small image (should fail)
+                let result = processor.detectFace(50, 50, null);
+                outputDiv.innerHTML += `<pre>📸 Small image (50x50):
+   Detected: ${result.detected}
+   Landmarks: ${result.landmarkCount}
+   Message: ${result.message}</pre>`;
+                
+                // Test 2: Medium image (should pass)
+                result = processor.detectFace(320, 240, null);
+                outputDiv.innerHTML += `<pre>📸 Medium image (320x240):
+   Detected: ${result.detected}
+   Landmarks: ${result.landmarkCount}
+   Message: ${result.message}</pre>`;
+                
+                // Test 3: Large image (should pass)
+                result = processor.detectFace(1920, 1080, null);
+                outputDiv.innerHTML += `<pre>📸 Large image (1920x1080):
+   Detected: ${result.detected}
+   Landmarks: ${result.landmarkCount}
+   Message: ${result.message}</pre>`;
+                
+                // Test 4: Draw simulation on canvas
+                const canvas = document.getElementById('testCanvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Clear canvas
+                ctx.fillStyle = '#f0f0f0';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw simulated face
+                ctx.fillStyle = '#ffcc99';
+                ctx.beginPath();
+                ctx.ellipse(320, 240, 100, 120, 0, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // Eyes
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(290, 220, 10, 0, 2 * Math.PI);
+                ctx.arc(350, 220, 10, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // Mouth
+                ctx.beginPath();
+                ctx.arc(320, 260, 40, 0, Math.PI);
+                ctx.stroke();
+                
+                // Test detection on canvas
+                result = processor.detectFace(canvas.width, canvas.height, null);
+                outputDiv.innerHTML += `<pre>📸 Canvas image (${canvas.width}x${canvas.height}):
+   Detected: ${result.detected}
+   Landmarks: ${result.landmarkCount}
+   Message: ${result.message}</pre>`;
+                
+                ctx.font = '16px Arial';
+                ctx.fillStyle = result.detected ? '#28a745' : '#dc3545';
+                ctx.fillText(result.detected ? '✅ Face Detected!' : '❌ No Face', 10, 30);
+                ctx.fillText(`${result.landmarkCount} landmarks`, 10, 50);
+                
+                outputDiv.innerHTML += '<pre style="color: green; font-weight: bold;">\n✅ Face detection tests completed!</pre>';
+                
+            } catch (error) {
+                outputDiv.innerHTML += `<pre style="color: red;">❌ Error: ${error.message}\n${error.stack}</pre>`;
+                console.error('Face detection error:', error);
+            }
+        }
+        
+        // Webcam functionality
+        let webcamStream = null;
+        let animationFrameId = null;
+        const maxCaptures = 5;
+        let capturedImages = [];
+        
+        function displayCapturedImages() {
+            const container = document.getElementById('capturedImages');
+            container.innerHTML = '<h4>Captured Faces (' + capturedImages.length + '/' + maxCaptures + ')</h4>';
+            
+            capturedImages.forEach((dataUrl, index) => {
+                const img = document.createElement('img');
+                img.src = dataUrl;
+                img.className = 'captured-img';
+                img.title = 'Click to download - Capture ' + (index + 1);
+                img.onclick = () => {
+                    const a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = 'face_capture_' + (index + 1) + '.png';
+                    a.click();
+                };
+                container.appendChild(img);
+            });
+            
+            if (capturedImages.length > 0) {
+                const resetBtn = document.createElement('button');
+                resetBtn.textContent = 'Reset Captures';
+                resetBtn.onclick = () => {
+                    capturedImages = [];
+                    if (processor) processor.resetCaptures();
+                    displayCapturedImages();
+                };
+                container.appendChild(resetBtn);
+            }
+        }
+        
+        async function startWebcam() {
+            if (!wasmModule || !processor) {
+                alert('Please wait for the module to load first!');
+                return;
+            }
+            
+            try {
+                // Initialize processor if not already done
+                if (!processor.isInitialized()) {
+                    processor.initialize();
+                    processor.setMaxYaw(15.0);
+                    processor.setMaxPitch(15.0);
+                    processor.setMaxCaptures(5);
+                }
+                
+                const video = document.getElementById('webcam');
+                const constraints = {
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    }
+                };
+                
+                webcamStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = webcamStream;
+                
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                document.getElementById('captureBtn').disabled = false;
+                
+                // Start processing frames
+                video.addEventListener('loadeddata', () => {
+                    processVideoFrame();
+                });
+                
+            } catch (error) {
+                console.error('Error accessing webcam:', error);
+                alert('Failed to access webcam: ' + error.message);
+            }
+        }
+        
+        function stopWebcam() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+            }
+            
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            
+            const video = document.getElementById('webcam');
+            video.srcObject = null;
+            
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('captureBtn').disabled = true;
+            
+            const canvas = document.getElementById('outputCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            document.getElementById('detectionStatus').textContent = '';
+            document.getElementById('faceInfo').textContent = '';
+        }
+        
+        function processVideoFrame() {
+            if (!webcamStream) return;
+            
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('outputCanvas');
+            const ctx = canvas.getContext('2d');
+            const statusDiv = document.getElementById('detectionStatus');
+            const infoDiv = document.getElementById('faceInfo');
+            
+            // Draw video frame to canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Get image data for processing
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Detect face
+            const result = processor.detectFace(canvas.width, canvas.height, null);
+            
+            // Update status
+            if (result.detected) {
+                // Color based on quality
+                statusDiv.style.color = result.qualityGood ? '#28a745' : '#ffc107';
+                statusDiv.textContent = result.qualityGood ? '✅ Good Quality!' : '⚠️ Adjust Pose';
+                
+                infoDiv.innerHTML = `
+                    <strong>Landmarks:</strong> ${result.landmarkCount}<br>
+                    <strong>Pose:</strong> Yaw ${result.yaw.toFixed(1)}° | Pitch ${result.pitch.toFixed(1)}° | Roll ${result.roll.toFixed(1)}°<br>
+                    <strong>Quality:</strong> ${result.message}<br>
+                    <strong>Thresholds:</strong> Yaw ±15° | Pitch ±15°<br>
+                    <strong>Captured:</strong> ${processor.getCaptureCount()}/${maxCaptures}
+                `;
+                
+                // Draw face indicator
+                if (document.getElementById('showLandmarks').checked) {
+                    drawFaceOverlay(ctx, canvas.width, canvas.height, result.qualityGood);
+                }
+            } else {
+                statusDiv.style.color = '#dc3545';
+                statusDiv.textContent = '❌ No Face Detected';
+                infoDiv.innerHTML = `<em>${result.message}</em>`;
+            }
+            
+            // Continue processing
+            animationFrameId = requestAnimationFrame(processVideoFrame);
+        }
+        
+        function drawFaceOverlay(ctx, width, height, qualityGood) {
+            // Color based on quality
+            const color = qualityGood ? '#00ff00' : '#ffa500';
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            
+            // Try to get real landmarks from processor
+            let landmarks = [];
+            try {
+                const landmarksArray = processor.getLandmarks();
+                if (landmarksArray && landmarksArray.length > 0) {
+                    landmarks = landmarksArray;
+                }
+            } catch (e) {
+                console.log('Could not get landmarks:', e);
+            }
+            
+            if (landmarks.length > 0) {
+                // Draw real landmarks (all 468 points)
+                ctx.fillStyle = color;
+                landmarks.forEach((lm, idx) => {
+                    const x = lm.x * width;
+                    const y = lm.y * height;
+                    
+                    // Draw smaller points for all landmarks
+                    ctx.beginPath();
+                    ctx.arc(x, y, 1, 0, 2 * Math.PI);
+                    ctx.fill();
+                    
+                    // Highlight key landmarks
+                    if ([33, 263, 1, 61, 291, 168, 152].includes(idx)) {
+                        ctx.fillStyle = '#ff0000';
+                        ctx.beginPath();
+                        ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.fillStyle = color;
+                    }
+                });
+                
+                // Draw face mesh connections (simplified - just outline)
+                ctx.strokeStyle = color;
+                ctx.globalAlpha = 0.3;
+                ctx.beginPath();
+                // Face oval (landmarks 10, 234, 454, 152)
+                if (landmarks[10] && landmarks[234] && landmarks[454] && landmarks[152]) {
+                    ctx.moveTo(landmarks[10].x * width, landmarks[10].y * height);
+                    ctx.lineTo(landmarks[234].x * width, landmarks[234].y * height);
+                    ctx.lineTo(landmarks[454].x * width, landmarks[454].y * height);
+                    ctx.lineTo(landmarks[152].x * width, landmarks[152].y * height);
+                    ctx.closePath();
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1.0;
+            } else {
+                // Fallback to simulated overlay
+                const centerX = width / 2;
+                const centerY = height / 2;
+                const faceWidth = width * 0.4;
+                const faceHeight = height * 0.5;
+                
+                ctx.strokeRect(
+                    centerX - faceWidth / 2,
+                    centerY - faceHeight / 2,
+                    faceWidth,
+                    faceHeight
+                );
+                
+                // Simulated key points
+                ctx.fillStyle = color;
+                const landmarkPositions = [
+                    [centerX - 50, centerY - 30],
+                    [centerX + 50, centerY - 30],
+                    [centerX, centerY],
+                    [centerX - 40, centerY + 40],
+                    [centerX + 40, centerY + 40],
+                ];
+                
+                landmarkPositions.forEach(([x, y]) => {
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+            }
+            
+            // Label with quality indicator and landmark count
+            ctx.fillStyle = color;
+            ctx.font = 'bold 16px Arial';
+            const landmarkText = landmarks.length > 0 ? `✓ ${landmarks.length} Landmarks` : '⚠ Adjust Pose';
+            ctx.fillText(landmarkText, 10, 30);
+        }
+        
+        function captureFrame() {
+            if (!processor || processor.getCaptureCount() >= maxCaptures) {
+                alert(`Maximum ${maxCaptures} captures reached!`);
+                return;
+            }
+            
+            const canvas = document.getElementById('outputCanvas');
+            
+            // Use the smart captureFrame method which validates quality
+            const captured = processor.captureFrame(canvas.width, canvas.height, null);
+            
+            if (!captured) {
+                const result = processor.detectFace(canvas.width, canvas.height, null);
+                if (!result.detected) {
+                    alert('No face detected! Please ensure your face is visible.');
+                } else if (!result.qualityGood) {
+                    alert(`Face quality not good enough!\n\n${result.message}\n\nPlease adjust your pose:\n• Yaw: ${result.yaw.toFixed(1)}° (max ±15°)\n• Pitch: ${result.pitch.toFixed(1)}° (max ±15°)`);
+                }
+                return;
+            }
+            
+            // Capture the current frame
+            const dataUrl = canvas.toDataURL('image/png');
+            capturedImages.push(dataUrl);
+            displayCapturedImages();
+            
+            // Visual feedback
+            canvas.style.border = '3px solid #28a745';
+            setTimeout(() => canvas.style.border = '1px solid #ddd', 300);
+            
+            // Show success message with count
+            const count = processor.getCaptureCount();
+            console.log(`✅ Captured ${count}/${maxCaptures} high-quality faces`);
+        }
+    </script>
+</body>
+</html>

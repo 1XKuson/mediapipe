@@ -1,0 +1,39 @@
+input_stream: "input_video"
+output_stream: "cropped_face"
+output_stream: "capture_status"
+
+# 1. ใช้ FaceMesh (แบบ CPU เพื่อความง่ายในการ Build WASM เบื้องต้น)
+# ต้องใช้ Refined Landmarks เพื่อความแม่นยำ
+node {
+  calculator: "FaceLandmarkFrontCpu"
+  input_stream: "IMAGE:input_video"
+  input_side_packet: "NUM_FACES:num_faces"
+  output_stream: "LANDMARKS:multi_face_landmarks"
+  output_stream: "ROIS_FROM_LANDMARKS:face_rects"
+  output_stream: "DETECTIONS:face_detections"
+  output_stream: "ROIS_FROM_DETECTIONS:face_rects_from_detections"
+  node_options: {
+    [type.googleapis.com/mediapipe.FaceLandmarkOptions] {
+      # สำคัญ! ใช้โมเดลที่มี Iris เพื่อความแม่นยำสูง
+      use_refined_landmarks: true 
+    }
+  }
+}
+
+# 2. Calculator อัจฉริยะของเรา
+node {
+  calculator: "SmartCaptureCalculator"
+  input_stream: "IMAGE:input_video"
+  input_stream: "LANDMARKS:multi_face_landmarks"
+  output_stream: "CROPPED_FACE:cropped_face"
+  output_stream: "STATUS:capture_status"
+  
+  node_options: {
+    [type.googleapis.com/mediapipe.SmartCaptureCalculatorOptions] {
+      max_captures: 3           # เอาแค่ 3 รูป
+      max_yaw_degrees: 12.0     # หันหน้าได้ไม่เกิน 12 องศา
+      max_pitch_degrees: 10.0   # ก้มเงยไม่เกิน 10 องศา
+      padding: 0.3              # ขยายขอบ 30%
+    }
+  }
+}

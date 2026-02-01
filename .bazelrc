@@ -130,3 +130,47 @@ try-import %workspace%/.configure.bazelrc
 
 # This bazelrc file can be used for user-specific custom build settings.
 try-import %workspace%/.user.bazelrc
+
+# --------------------------------------------------------
+# ⚡ Simple WASM Config (Cleaned Version)
+# --------------------------------------------------------
+
+# 1. Toolchain Setup (บอก Bazel ว่าจะใช้ Emscripten)
+build:wasm --cpu=wasm
+build:wasm --crosstool_top=@emsdk//emscripten_toolchain:everything
+build:wasm --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
+
+# Resource Limits (จำกัด RAM ที่ 5GB)
+build:wasm --local_ram_resources=5120
+build:wasm --jobs=4
+
+# 2. Optimization (เน้นเล็กและเร็ว)
+build:wasm --copt=-O3
+build:wasm --copt=-flto
+build:wasm --copt=-DEMSCRIPTEN
+build:wasm --copt=-msimd128
+build:wasm --copt=-Wno-c++11-narrowing
+
+# 3. MediaPipe Settings (ปิด GPU/XNNPACK เพื่อลดความซับซ้อน)
+build:wasm --define=MEDIAPIPE_DISABLE_GPU=1
+build:wasm --define=TFLITE_KERNEL_USE_XNNPACK=0
+build:wasm --copt=-DPTHREADPOOL_NO_DEPRECATED_API
+build:wasm --copt=-DMEDIAPIPE_DISABLE_PTHREAD_THREADPOOL
+
+# 4. Linker Flags (จัดการ Memory)
+build:wasm --linkopt=-sALLOW_MEMORY_GROWTH=1
+build:wasm --linkopt=-sUSE_PTHREADS=0
+build:wasm --linkopt=-sTOTAL_STACK=16MB
+
+# 5. Critical Fixes (จำเป็นต้องมี เพื่อให้หา Header เจอ)
+# หลอกระบบว่าเป็น Linux เพื่อให้ MediaPipe ยอมใช้ OpenCV
+build:wasm --copt=-D__linux__
+build:wasm --copt=-D__NR_gettid=224
+build:wasm --copt=-Dsyscall(x)=0
+
+# ยกเว้นไลบรารีบางตัว ไม่ให้โดนหลอก (กัน Error)
+build:wasm --per_file_copt=external/com_google_absl/.*@-U__linux__
+build:wasm --per_file_copt=external/XNNPACK/.*@-U__linux__
+build:wasm --per_file_copt=external/cpuinfo/.*@-U__linux__
+build:wasm --per_file_copt=external/pthreadpool/.*@-U__linux__,-DPTHREADPOOL_USE_FUTEX=0
+build:wasm --per_file_copt=mediapipe/framework/deps/.*@-DMEDIAPIPE_DISABLE_PTHREAD_THREADPOOL
